@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import time
 from datetime import datetime
 from typing import List
@@ -14,10 +15,11 @@ from scripts.config import Config
 from scripts.sqlAlchemyConn import SQLAlchemyConn
 from vo.book import Book
 
-# 设置日志配置
-logging_config.setup_logging()
-# 使用日志记录器
-logger = logging.getLogger(__name__)
+
+# # 设置日志配置
+# logging_config.setup_logging()
+# # # 使用日志记录器
+# logger = logging.getLogger(__name__)
 
 
 class Browser(webdriver.ChromeOptions):
@@ -25,7 +27,9 @@ class Browser(webdriver.ChromeOptions):
     def __init__(self):
         super().__init__()
         self.conf = Config()
-        self.logger = logging.getLogger(__name__)
+        # self.logger = logger
+        # self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(f"Browser_{threading.get_ident()}")
         self.sqlConn = SQLAlchemyConn()
         self.display_browser = self.conf.config.getboolean("config", "display_browser")
 
@@ -94,6 +98,7 @@ class Browser(webdriver.ChromeOptions):
             """
         })
         self.browser = browser
+        # self.logger.info("浏览器初始化成功")
         # return browser
 
     # # 登录并设置cookie
@@ -117,6 +122,7 @@ class Browser(webdriver.ChromeOptions):
         time.sleep(int(self.conf.config["config"]["wait_time"]))
         self.browser.find_element(By.XPATH, './/div[@class="navbar-main"]/a[@href="/bookstore/?channel"]').click()
         time.sleep(int(self.conf.config["config"]["wait_time"]))
+        self.logger.info("成功跳转到书库页面")
 
     def get_info_one_page(self, book_list: List[WebElement]):
         for book in book_list:
@@ -176,16 +182,23 @@ class Browser(webdriver.ChromeOptions):
             # url
             book_url = book.find_element(By.XPATH, './/a[@class="book-name"]').get_attribute('href')
 
-            print("书名：", book_name)
-            print("作者：", book_author)
-            print("字数：", book_word_count)
-            print("更新状态：", book_status)
-            print("更新时间：", book_update_time)
-            print("评分：", book_score)
-            print("评分人数：", book_score_count)
-            print("标签：", book_tag)
-            print("url：", book_url)
-            print("-----------------------------------")
+            # print("书名：", book_name)
+            # print("作者：", book_author)
+            # print("字数：", book_word_count)
+            # print("更新状态：", book_status)
+            # print("更新时间：", book_update_time)
+            # print("评分：", book_score)
+            # print("评分人数：", book_score_count)
+            # print("标签：", book_tag)
+            # print("url：", book_url)
+            # print("-----------------------------------")
+            self.logger.info("-----------------------------------")
+            self.logger.info(
+                f"书籍信息：\n书名：{book_name}\n作者：{book_author}\n"
+                f"字数：{book_word_count}\n更新状态：{book_status}\n"
+                f"更新时间：{book_update_time}\n评分：{book_score}\n"
+                f"评分人数：{book_score_count}\n标签：{book_tag}\n"
+                f"url：{book_url}")
             # 插入数据库
             book = Book(book_name=book_name, book_author=book_author,
                         book_url=book_url, book_word_count=book_word_count,
@@ -195,7 +208,10 @@ class Browser(webdriver.ChromeOptions):
             book.info_check()
             self.sqlConn.insert_or_update_book(book)
 
+    # 添加错误处理与出错重试
     def get_info_all(self, start_page=1, end_page=0):
+        # 最大重试次数
+        max_retries = 3
         # 第一页
 
         # 点击按钮
@@ -212,11 +228,13 @@ class Browser(webdriver.ChromeOptions):
 
         # 跳转到书库页面
         self.to_library()
-
+        page = start_page
         try:
-            while start_page <= end_page:
+
+            while page <= end_page:
                 # url = "{}={}".format(page_url, start_page)
-                print("第", start_page, "页......")
+                # print("第", start_page, "页......")
+                self.logger.info(f"第{page}页......")
                 # print("url：", url)
                 # self.browser.get(url)
 
@@ -228,7 +246,7 @@ class Browser(webdriver.ChromeOptions):
                 # 全选
                 input_box.send_keys(Keys.CONTROL, "a")
                 # 输入页数
-                input_box.send_keys(start_page)
+                input_box.send_keys(page)
                 input_box.send_keys(Keys.RETURN)
                 # time.sleep(5)
 
@@ -239,10 +257,29 @@ class Browser(webdriver.ChromeOptions):
 
                 book_list = self.browser.find_elements(By.XPATH, '//div[@class="result-item-layout-body"]')
                 self.get_info_one_page(book_list)
-                start_page = start_page + 1
+                page = page + 1
+            self.logger.info(f"书籍数据爬取完成，开始页数：{start_page},结束(当前)页数：{page}")
+            return True, page - 1
         except Exception as e:
-            print("出现异常，当前页数为：", start_page, "异常信息：", e)
+            # print("出现异常，当前页数为：", page, "异常信息：", e)
+            self.logger.error(f"出现异常，当前页数为：{page}, 异常信息：{e}")
+            return False, page
 
+    def get_info_all_retry(self, start_page, end_page):
+        max_retries = 3  # 最大重试次数
+        retries = 0
+
+        while retries < max_retries:
+            # self.to_library()
+            success, current_page = self.get_info_all(start_page, end_page)
+            if success:
+                break  # 如果成功，退出重试循环
+            else:
+                retries += 1
+                self.logger.error(f"第 {current_page} 页数据爬取失败，正在进行第 {retries}/{max_retries} 次重试...")
+                # 这里可以设置新的 start_page 和 end_page 或者保留原来的
+                # 例如，你可以选择从失败的页码重新开始
+                start_page = current_page
 # browser = Browser()
 # print(browser.current_dir)
 # print(browser.project_dir)

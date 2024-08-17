@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Double, DateTime, Float
+from sqlalchemy import Column, Integer, String, Double, DateTime, Float, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -6,7 +6,7 @@ Base = declarative_base()
 
 class Book(Base):
     __tablename__ = 'youshu_book'
-    book_id = Column(Integer, primary_key=True)
+    book_id = Column(BigInteger, primary_key=True)
     book_name = Column(String(255))
     book_author = Column(String(255))
     book_url = Column(String(255))

@@ -1,8 +1,17 @@
+import logging
+import threading
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from scripts import logging_config
 from scripts.config import Config
 from vo.book import Book
+
+# # 设置日志配置
+# logging_config.setup_logging()
+# # # 使用日志记录器
+# logger = logging.getLogger(__name__)
 
 
 class SQLAlchemyConn(object):
@@ -11,7 +20,11 @@ class SQLAlchemyConn(object):
         url = "mysql+pymysql://{}:{}@{}/{}".format(self.conf.config["mysql"]["user"],
                                                    self.conf.config["mysql"]["password"],
                                                    self.conf.config["mysql"]["host"], "crawler")
-        print(url)
+        # self.logger = logger
+        # self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(f"Browser_{threading.get_ident()}")
+        # print(url)
+        self.logger.info(f"url:{url}")
         self.engine = create_engine(url,
                                     echo=False)
         Session_class = sessionmaker(bind=self.engine)
@@ -23,9 +36,10 @@ class SQLAlchemyConn(object):
     # 插入或更新
     def insert_or_update_book(self, obj: Book):
         # 根据url进行判断,如果url相同，更新;url不同，插入
-        existing_book = self.session.query(Book).filter_by(book_url=obj.book_url).first()
+        # 添加对书名进行判断
+        existing_book = self.session.query(Book).filter_by(book_url=obj.book_url, book_name=obj.book_name).first()
         if existing_book:
-            print("书籍已存在，更新中......")
+            self.logger.info(f"书籍《{obj.book_name}》已存在，更新中......")
             # Update existing book
             existing_book.book_name = obj.book_name
             existing_book.book_author = obj.book_author

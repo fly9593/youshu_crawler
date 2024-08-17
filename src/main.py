@@ -1,8 +1,11 @@
 import argparse
+
+from scripts import logging_config
 from scripts.browser import Browser
 
 
 def main(start_page, end_page):
+    logging_config.setup_logging(start_page, end_page)
     browser = Browser()
     browser.init_browser()
     # browser.login()
